@@ -751,6 +751,26 @@ public class DomParser {
         }
 
         /**
+         * 合并两个节点列表
+         *
+         * @param list1 节点列表1
+         * @param list2 节点列表2
+         * @return 合并后的节点列表
+         */
+        private static ArrayList<NodeElement> mergeNodes(ArrayList<NodeElement> list1, ArrayList<NodeElement> list2) {
+            if (list1 != null && list2 != null) {
+                for (NodeElement node : list2) {
+                    if (!list1.contains(node)) {
+                        list1.add(node);
+                    }
+                }
+                return list1;
+            } else {
+                return list1 != null ? list1 : list2;
+            }
+        }
+
+        /**
          * 将一个选择器应用于上下文元素查找
          *
          * @param context 上下文元素组
@@ -773,23 +793,22 @@ public class DomParser {
          * @return 查找到的结果
          */
         private static ArrayList<NodeElement> searchElement(ArrayList<Node> context, char oper1, String str1, char oper2, String str2) {
-            ArrayList<NodeElement> result = new ArrayList<NodeElement>();
             ArrayList<NodeElement> findNodes = null;
             switch (oper1) {
                 case 0:
                 case ' ':
                     for (Node cNode : context) {
-                        findNodes = cNode.getElementsByTagName(str1);
+                        findNodes = mergeNodes(findNodes, cNode.getElementsByTagName(str1));
                     }
                     break;
                 case '#':
                     for (Node cNode : context) {
-                        findNodes = cNode.getElementById(str1);
+                        findNodes = mergeNodes(findNodes, cNode.getElementById(str1));
                     }
                     break;
                 case '.':
                     for (Node cNode : context) {
-                        findNodes = cNode.getElementsByClassName(str1);
+                        findNodes = mergeNodes(findNodes, cNode.getElementsByClassName(str1));
                     }
                     break;
                 case '>':
@@ -810,14 +829,7 @@ public class DomParser {
                 default:
                     break;
             }
-            if (findNodes != null) {
-                for (NodeElement fNode : findNodes) {
-                    if (!result.contains(fNode)) {
-                        result.add(fNode);
-                    }
-                }
-            }
-            return result;
+            return mergeNodes(new ArrayList<NodeElement>(), findNodes);
         }
 
         /**
@@ -1173,6 +1185,31 @@ public class DomParser {
         @Override
         public String toString(boolean format, String space, String line, int levelref) {
             return "<!--" + comment + "-->";
+        }
+    }
+
+    /**
+     * CDATA部件节点，![CDATA[标记的声明内容
+     */
+    public static class NodeCDATA extends Node {
+
+        /**
+         * CDATA部件内容
+         */
+        public String content;
+
+        /**
+         * CDATA部件节点构造函数
+         *
+         * @param content CDATA部件内容
+         */
+        public NodeCDATA(String content) {
+            this.content = content;
+        }
+
+        @Override
+        public String toString(boolean format, String space, String line, int levelref) {
+            return "<![CDATA[" + content + "]]>";
         }
     }
 
@@ -1742,6 +1779,17 @@ public class DomParser {
                         index = commentEndIndex + 3;
                         continue;//get comment,continue
                     }
+                } else if (tagStartIndex + 8 < end && source.startsWith("[CDATA[", tagStartIndex + 2)) {
+                    //处理CDATA内容
+                    int cdataEndIndex = source.indexOf("]]>", tagStartIndex + 9);
+                    if (cdataEndIndex < 0 || cdataEndIndex >= end) {
+                        break;
+                    } else {
+                        String cdata = source.substring(tagStartIndex + 9, cdataEndIndex);
+                        context.addChild(new NodeCDATA(cdata));
+                        index = cdataEndIndex + 3;
+                        continue;//get cdata,continue
+                    }
                 } else {
                     int nameEnd = searchWordEnd(source, tagStartIndex + 2, end);
                     if (nameEnd < 0 || nameEnd >= end) {
@@ -1759,6 +1807,9 @@ public class DomParser {
                 }
             } else if (firstChar == '/') {
                 int tagEndIndex = searchMatchChar(source, tagStartIndex + 2, end, '>', !xmlmode, false);
+                if (tagEndIndex < 0 || tagEndIndex >= end) {
+                    break;
+                }
                 String name = source.substring(tagStartIndex + 2, tagEndIndex).trim();
                 if (context instanceof NodeElement) {
                     NodeElement elmNode = (NodeElement) context;
@@ -1777,6 +1828,9 @@ public class DomParser {
                 }
                 String name = source.substring(tagStartIndex + 1, nameEnd);
                 int tagEndIndex = searchMatchChar(source, nameEnd, end, '>', !xmlmode, false);
+                if (tagEndIndex < 0 || tagEndIndex >= end) {
+                    break;
+                }
                 int closeSymbolIndex = searchMatchChar(source, nameEnd, tagEndIndex, '/', !xmlmode, false);
                 boolean selfClose = closeSymbolIndex >= 0 && closeSymbolIndex < tagEndIndex;
                 closeSymbolIndex = closeSymbolIndex < 0 ? tagEndIndex : closeSymbolIndex;
